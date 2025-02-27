@@ -1,0 +1,256 @@
+# Análisis de cambios en temperatura
+
+Jorge Galeano Maté.
+
+------------------------------------------------------------------------
+
+### 1. Como puedes comprobar, aparecen muchas columnas denominadas F1970 hasta F2021. Estas columnas contienen el año y su valor de emisión. Obtén únicamente 2 columnas, una llamada Year y otra llamada Value. ¿Cuántas filas x columnas tenías antes y cuántas tienes ahora?
+
+Primero, importamos el csv y lo transformamos a dataframe. Lo abrimos con la codificación "Windows-1252" para que no haya problemas con la visualización de algunos caracteres, concretamente de los nombres de países.
+
+```{r}
+df <- read.csv("Annual Surface Temperature Change.csv", fileEncoding = "Windows-1252")
+
+head(df)
+```
+
+Después, importamos las librerías de *tidyr* y *dplyr*. Obtenemos las filas y columnas previas; usamos la función `gather()` para reducir columnas y añadir filas; y mostramos el número de filas y columnas nuevas.
+
+```{r}
+library(tidyr)
+library(dplyr)
+
+print(paste("Dimensiones previas:", dim(df)[1], "filas x", dim(df)[2], "columnas."))
+
+df <- gather(df, "Year", "Value", colnames(select(df, F1970:F2021)))
+
+print(paste("Dimensiones nuevas:", dim(df)[1], "filas x", dim(df)[2], "columnas."))
+```
+
+### 2. La columna Year tiene el valor innecesario "F" para cada uno de los años, borra el carácter "F" de toda la columna y cambia el tipo de esta columna a factor.
+
+Para ello, utilizamos la función `gsub()`, que reemplaza una parte del valor por otra (en este caso, eliminamos la "F"). Con la función `as.factor()`, modificamos la columna a factor.
+
+```{r}
+df$Year <- gsub("F", "", as.character(df$Year))
+
+df$Year <- as.factor(df$Year)
+
+head(df)
+```
+
+### 3. Revisa los valores nulos del dataframe. Como tal, la columna "Value" tiene ahora muchos más valores nulos que en el dataset original. Para reemplazar estos valores vamos a tomar la siguiente estrategia:
+
+-   ***El valor de reemplazo estará sujeto al año, es decir, los valores nulos de la columna "Value" que correspondan al año 2010 serán sustituidos por la media de 2010.***
+-   ***Realiza este cambio para todos los años.***
+-   ***Si aparecen los valores de la columna en notación científica, deja toda la columna en solo dos decimales.***
+
+Para realizar esto, necesitamos hacer una agrupación de los valores, ya que queremos que cada valor nulo de Value se convierta a la media del año al que corresponde, no a la media en general. Para ello, usamos la función `group_by()`.
+
+Después, usamos `mutate()` para modificar los valores de la columna. Dentro de esta función, el operador `if_else()` de *Dplyr* es preferible frente al `ifelse()` base de R, ya que es vectorizado y no dará problemas a la hora de encontrarse con valores inesperados. Para los valores de Value, si son nulos, los modificamos por la media de los valores del año no nulos; y si no son nulos, solo los redondeamos.
+
+Por último, desagrupamos.
+
+```{r}
+df <- df %>%
+  group_by(Year) %>%
+  mutate(Value = if_else(is.na(Value), round(mean(Value, na.rm = T), 2), round(Value, 2))) %>%
+  ungroup()
+
+head(df)
+```
+
+### 4. Si revisamos los datos referentes a países, veremos nombres de países que forman congregaciones de los mismos, por ejemplo "Advanced Economies" o "Eastern Asia". Vamos a trabajar solamente con nombres de países, por lo que, investiga sobre estas agrupaciones de países y elimina todos aquellos que consideres, muestra el nº de filas al realizar este filtro de países.
+
+Primero, metemos en una variable todas las agrupaciones de países que queremos eliminar. Después, con la función `gsub()`, lo que hacemos es cambiar esos nombres por nada, y luego filtramos y cogemos solo las filas que tengan texto.
+
+```{r}
+agrupaciones <- c(
+  "Advanced Economies", "Africa", "Americas", "Asia", "Central Asia", "Eastern Asia", "Eastern Europe", "Emerging and Developing Economies", "Europe", "G20", "G7", "International Air", "International Shipping", "Latin America and the Caribbean", "Northern Africa", "Northern America", "Northern Europe", "Oceania", "Oceania sub-regions", "South", "South-eastern Asia", "Southern Asia", "Southern Europe", "Sub-Saharan Africa", "Western Asia", "Western Europe", "World"
+)
+
+df$Country <- gsub(paste(agrupaciones, collapse = "|"), "", df$Country)
+
+df <- df[df$Country != "", ]
+
+print(paste("Filas actuales:", dim(df)[1]))
+```
+
+### 5. Filtra el dataset por los gases de efecto invernadero (Greenhouse gas), obtén el total de emisiones por año, posteriormente, muestra de forma descendente el total de emisiones de gases de efecto invernadero. ¿Qué años registran las 3 mayores emisiones?
+
+Antes de nada, como vamos a utilizar parte del código más de una vez, definimos una nueva función llamada "filtrado.anual", que se encargará de agrupar por año y filtrar las columnas y valores que se pasen.
+
+Usamos la función `group_by()` para agrupar por año y `filter()` para seleccionar lo deseado (en este caso, gases de efecto invernadero).
+
+Fuera de la nueva función, para este caso, aplicamos `summarize()` para que los valores sean la suma de todos los valores, y que solo quede uno y no se repitan; y ordenamos por valores con `arrange(desc())`. Automáticamente se seleccionarán las columnas *Year* (por haber hecho la agrupación por ella) y *Value* (por haber usado la función `summarize()`).
+
+```{r}
+filtrado.anual <- function(dataframe, columna.filtro, valor.filtro){
+  resultado <- dataframe %>% # Selección del dataframe con el que trabajar.
+    group_by(Year) %>% # Agrupación por año.
+    filter(!as.character(columna.filtro) == valor.filtro) # Filtro por columna y valor que se pasen.
+}
+
+df.greenhouse <- filtrado.anual(df, "Gas_Type", "Greenhouse gas")
+
+df.greenhouse <- df.greenhouse %>% 
+  summarize(Value = sum(Value)) %>% # Cambio de valores con función deseada.
+  arrange(desc(Value))# Orden descendente por valores.
+
+df.greenhouse
+
+print(paste("Años con las 3 emisiones más contaminantes:",
+            paste(head(df.greenhouse$Year, 3), collapse = ", ")))
+```
+
+Tal y como se muestra, los años que tuvieron las 3 emisiones más contaminantes de efecto invernadero fueron el 2019, 2020 y 2021.
+
+### 6. Sobre los resultados obtenidos anteriormente, muestra todos los años de forma gráfica.
+
+Usamos la librería `ggplot2`. Ajustamos los parámetros y especificamos el tipo de gráfica, en este caso un diagrama de barras.
+
+```{r}
+library(ggplot2)
+
+ggplot(df.greenhouse, aes(x = Year, y = Value)) +
+  geom_bar(stat = "identity", fill = "cyan4") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  labs(x = "Año", y = "Valor", title = "Valor anual total de gases de efecto invernadero")
+```
+
+### 7. Analiza la situación sobre emisiones de gases fluorados creados artificialmente por el ser humano (Fluorinated gases), verás algo extraño, hace varias décadas emitíamos muchísimos más gases y, a partir de un año, se experimenta una caída en estas emisiones (si revisas los apartados anteriores descubrirás que esto no es casual, es fruto de nuestras analíticas anteriores). Cuando localices la caída de estas emisiones, filtra el conjunto de datos por únicamente este gas y, por el primer año en el que detectes esta gran caída, posteriormente, con los datos filtrados muestra el top 5 de países que más emisiones medias producen al cabo del año en referencia a gases fluorados.
+
+Aplicamos la función anteriormente creada para poder mostrar una gráfica que nos muestre las medias de cada año y así observar mejor cuándo se produce dicha caída, aunque se puede observar igualmente en el ejercicio anterior.
+
+```{r}
+df.fluorinated <- filtrado.anual(df, "Gas_Type", "Fluorinated gases")
+
+df.fluorinated <- df.fluorinated %>% 
+  summarize(Value = mean(Value))
+
+ggplot(df.fluorinated, aes(x = Year, y = Value)) +
+  geom_bar(stat = "identity", fill = "cyan4") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  labs(x = "Año", y = "Valor", title = "Media anual de gases fluorados")
+  
+```
+
+Habiendo visto que es en 1990 cuando se cambia la forma de analizar estos datos, ahora filtramos los datos que sean desde 1990 (incluido) y mostramos los 5 más altos. Como los años están transformados a factores, para poder usar operadores de comparación (en este caso, `>=`), convertimos esos valores en numéricos con `as.numeric(as.character())`. Seleccionamos las columnas de *Country* y *Value*.
+
+```{r}
+filtrado.paises <- function(dataframe, columna.filtro, valor.filtro){
+  resultado <- dataframe %>% # Selección del dataframe con el que trabajar.
+    group_by(Country) %>% # Agrupación por país.
+    filter(!as.character(columna.filtro) == valor.filtro) # Filtro por columna y valor que se pasen.
+}
+
+df.fluorinated.1990 <- filtrado.paises(df, "Gas_Type", "Fluorinated gases")
+
+df.fluorinated.1990 <- df.fluorinated.1990 %>% 
+  filter(as.numeric(as.character(Year)) >= 1990) %>%
+  mutate(Value = round(mean(Value), 2)) %>% 
+  select(Country, Value) %>% 
+  arrange(desc(Value)) %>% 
+  distinct()
+
+df.fluorinated.1990
+
+print(paste("Los 5 países con las mayores emisiones de gases fluorados desde 1990 son:",
+            paste(head(df.fluorinated.1990$Country, 5), collapse = "; ")))
+```
+
+### 8. Selecciona únicamente los datos de España y en el tipo de gas selecciona todos menos "Not Applicable". Posteriormente, muestra de forma visual la evolución de las emisiones por cada tipo de gas.
+
+***NOTA: Debe emplearse una única visualización para mostrar todas las visualizaciones.***
+
+Agrupamos por año y filtramos para que sea únicamente los gases diferente de *"Not Applicable"* y en España; modificamos los valores para que sean la suma de todos los del año; y seleccionamos las columnas que necesitamos para la visualización.
+
+Después, realizamos un gráfico con *ggplot2* de tipo diagrama de barras apiladas.
+
+```{r}
+df.spain.gases <- df %>% 
+  group_by(Year, Gas_Type) %>% 
+  filter(Country == "Spain", Gas_Type != "Not Applicable") %>% 
+  mutate(Value = sum(Value)) %>% 
+  select(Country, Year, Value, Gas_Type) %>% 
+  distinct()
+
+ggplot(df.spain.gases, aes(fill=Gas_Type, y=Value, x=Year)) + 
+  geom_bar(position="stack", stat="identity") +
+  theme(axis.text.x = element_text(angle = 80, hjust = 1, size = 8)) +
+  labs(x = "Año", y = "Valor", fill = "Tipo de gas", title = "Evolución de emisiones totales de gases en España") +
+  scale_fill_discrete(labels = c("Carbon dioxide" = "Dióxido de\ncarbono",
+                              "Fluorinated gases" = "Gases fluorados",
+                              "Greenhouse gas" = "Gases de efecto\ninvernadero",
+                              "Methane" = "Metano",
+                              "Nitrous oxide" = "Óxido nitroso"))
+```
+
+### 9. Respecto al filtrado anterior sobre los datos de España, ¿qué industria en términos de emisiones totales resulta más contaminante? (Si aparece algún resultado extraño sobre el tipo de industria, puedes filtrarlo).
+
+Para evaluar la contaminación por industria en España, esta vez agrupamos por *Industry* y usamos el mismo filtro que en el apartado anterior (esta vez añadiendo que tampoco se muestren las industrias con valor *"Not Applicable"*). Seleccionamos las columnas de *Industry* y *Value* y modificamos los valores para que sean la suma total de contaminantes de esa industria.
+
+```{r}
+df.spain.industrias <- df %>% 
+  group_by(Industry) %>% 
+  filter(Country == "Spain", Gas_Type != "Not Applicable", Industry != "Not Applicable") %>% 
+  select(Industry, Value) %>% 
+  mutate(Value = sum(Value)) %>% 
+  distinct() %>% 
+  arrange(desc(Value))
+
+df.spain.industrias
+
+print(paste("La industria más contaminante en España es:",
+            first(df.spain.industrias$Industry)))
+```
+
+### 10. Vamos a obtener una nueva categoría llamada "LEVEL_EMISSIONS". Para obtener esta categoría, vamos a observar únicamente al tipo de indicador Annual Net Emissions/Removals, y tomaremos los valores medios sobre emisiones. Solamente tendremos en cuenta los datos referentes a España.
+
+***Los tramos que tendrá esta categoría serán:***
+
+-   ***LOW_EMISSIONS: desde el mínimo a 17.00.***
+
+-   ***MED_EMISSIONS: a partir de 17.00 hasta 20.00.***
+
+-   ***HIGH_EMISSIONS: desde 20.00 hasta el máximo.***
+
+***Tras crear esta variable categoría, muestra la serie histórica por el indicador Annual Net Emissions/Removals y emisiones medias en función de LEVEL_EMISSIONS.***
+
+En este caso, volvemos a usar el filtro del último apartado y le añadimos que filtre también solo por el indicador. Previamente lo agrupamos por *Year* para asignar la media de emisiones de cada año, y eliminamos los duplicados.
+
+Aprovechamos para usar las funciones `attach()` y `detach()` para evitar tener que poner el nombre del dataframe varias veces para usar sus columnas. Creamos la nueva columna como factor y le asignamos las condiciones con `if_else()`, mencionamos los 3 niveles y avisamos al programa de que están ordenados de menor a mayor.
+
+Por último, mostramos el dataframe y la gráfica, en este caso usamos una gráfica lineal para representar los cambios del nivel de emisiones.
+
+```{r}
+df.spain.emissions <- df %>% 
+  group_by(Year) %>% 
+  filter(Country == "Spain", Gas_Type != "Not Applicable",
+         Industry != "Not Applicable", Indicator == "Annual Net Emissions/Removals") %>% 
+  mutate(Value = mean(Value)) %>% 
+  select(Year, Value) %>% 
+  distinct() %>% 
+  ungroup()
+
+attach(df.spain.emissions, warn.conflicts = F)
+
+df.spain.emissions$LEVEL_EMISSIONS <- factor(
+  if_else(
+    Value < 17.00, "LOW_EMISSIONS",
+    if_else(Value >= 20.00, "HIGH_EMISSIONS", "MED_EMISSIONS")
+    ),
+  levels = c("LOW_EMISSIONS", "MED_EMISSIONS", "HIGH_EMISSIONS"),
+  ordered = T
+)
+
+detach(df.spain.emissions)
+
+df.spain.emissions
+
+ggplot(df.spain.emissions, aes(x = Year, y = LEVEL_EMISSIONS)) +
+  geom_line(size = 1.5, group = 1, color = "cyan4") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 1)) +
+  labs(x = "Año", y = "Nivel de emisiones", title = "Nivel de emisiones en España") +
+  scale_y_discrete(labels = c("HIGH_EMISSIONS" = "ALTAS", "MED_EMISSIONS" = "MEDIAS", "LOW_EMISSIONS" = "BAJAS"))
+```
