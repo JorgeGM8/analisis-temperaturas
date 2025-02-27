@@ -3,7 +3,7 @@ Notebook realizado en R en el que hago una limpieza y evaluación en base a preg
 
 # Instrucciones
 Para abrir el notebook, se necesita de un programa como R Studio, VS Code o similar.
-Para importar e instalar las librerías necesarias, usar el archivo requirements.txt. Se puede realizar abriendo una terminal de R:
+Para importar e instalar las librerías necesarias, usar el archivo requirements_r.txt. Se puede realizar abriendo una terminal de R:
 ```
 pkgs <- readLines("requirements_r.txt")
 install.packages(pkgs)
